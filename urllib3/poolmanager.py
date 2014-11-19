@@ -24,8 +24,8 @@ pool_classes_by_scheme = {
 
 log = logging.getLogger(__name__)
 
-SSL_KEYWORDS = ('key_file', 'cert_file', 'cert_reqs', 'ca_certs',
-                'ssl_version')
+SSL_KEYWORDS = set(['key_file', 'cert_file', 'cert_reqs', 'ca_certs',
+                    'ssl_version', 'ssl_socket'])
 
 
 class PoolManager(RequestMethods):
