@@ -162,6 +162,10 @@ class HTTPSConnection(HTTPConnection):
     def __init__(self, host, port=None, key_file=None, cert_file=None,
                  strict=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, **kw):
 
+        # Remove the ssl_context keyword argument before passking the keyword
+        # arguments to HTTPConnection's initializer.
+        self.ssl_context = kw.pop('ssl_context', None)
+
         HTTPConnection.__init__(self, host, port, strict=strict,
                                 timeout=timeout, **kw)
 
@@ -191,6 +195,23 @@ class VerifiedHTTPSConnection(HTTPSConnection):
     def set_cert(self, key_file=None, cert_file=None,
                  cert_reqs=None, ca_certs=None,
                  assert_hostname=None, assert_fingerprint=None):
+        """Set the certificate verification options on this connection.
+
+        :param str key_file:
+            The path to the key file.
+        :param str cert_file:
+            The path to the certificate file.
+        :param int cert_reqs:
+            One of ssl.CERT_REQUIRED, ssl.CERT_OPTIONAL, ssl.CERT_NONE. This
+            determines if the certificate is required to match, is optional,
+            or is not required to match.
+        :param str ca_certs:
+            Path to a pem file of certificates.
+        :param str assert_hostname:
+            Hostname with which to enforce matching.
+        :param str assert_fingerprint:
+            Fingerprint of the certificate you are expecting to receive.
+        """
 
         self.key_file = key_file
         self.cert_file = cert_file
@@ -235,7 +256,8 @@ class VerifiedHTTPSConnection(HTTPSConnection):
                                     cert_reqs=resolved_cert_reqs,
                                     ca_certs=self.ca_certs,
                                     server_hostname=hostname,
-                                    ssl_version=resolved_ssl_version)
+                                    ssl_version=resolved_ssl_version,
+                                    ssl_context=self.ssl_context)
 
         if self.assert_fingerprint:
             assert_fingerprint(self.sock.getpeercert(binary_form=True),
