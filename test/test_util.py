@@ -341,12 +341,11 @@ class TestUtil(unittest.TestCase):
         self.assertEqual(timeout.get_connect_duration(), 37)
 
     def test_resolve_cert_reqs(self):
-        self.assertEqual(resolve_cert_reqs(None), ssl.CERT_NONE)
-        self.assertEqual(resolve_cert_reqs(ssl.CERT_NONE), ssl.CERT_NONE)
-
-        self.assertEqual(resolve_cert_reqs(ssl.CERT_REQUIRED), ssl.CERT_REQUIRED)
-        self.assertEqual(resolve_cert_reqs('REQUIRED'), ssl.CERT_REQUIRED)
-        self.assertEqual(resolve_cert_reqs('CERT_REQUIRED'), ssl.CERT_REQUIRED)
+        self.assertEqual(resolve_cert_reqs(None, None), ssl.CERT_NONE)
+        self.assertEqual(resolve_cert_reqs(ssl.CERT_NONE, None), ssl.CERT_NONE)
+        self.assertEqual(resolve_cert_reqs(ssl.CERT_REQUIRED, None), ssl.CERT_REQUIRED)
+        self.assertEqual(resolve_cert_reqs('REQUIRED', None), ssl.CERT_REQUIRED)
+        self.assertEqual(resolve_cert_reqs('CERT_REQUIRED', None), ssl.CERT_REQUIRED)
 
     def test_is_fp_closed_object_supports_closed(self):
         class ClosedFile(object):
@@ -377,23 +376,6 @@ class TestUtil(unittest.TestCase):
             pass
 
         self.assertRaises(ValueError, is_fp_closed, NotReallyAFile())
-
-    def test_ssl_wrap_socket_loads_the_cert_chain(self):
-        socket = object()
-        mock_context = Mock()
-        ssl_wrap_socket(ssl_context=mock_context, sock=socket,
-                        certfile='/path/to/certfile')
-
-        mock_context.load_cert_chain.assert_called_once_with(
-            '/path/to/certfile', None)
-
-    def test_ssl_wrap_socket_loads_verify_locations(self):
-        socket = object()
-        mock_context = Mock()
-        ssl_wrap_socket(ssl_context=mock_context, ca_certs='/path/to/pem',
-                        sock=socket)
-        mock_context.load_verify_locations.assert_called_once_with(
-            '/path/to/pem')
 
     def test_ssl_wrap_socket_with_no_sni(self):
         socket = object()
