@@ -1,11 +1,14 @@
 import unittest
 import json
 
+from nose.plugins.skip import SkipTest
+from dummyserver.server import HAS_IPV6
 from dummyserver.testcase import (HTTPDummyServerTestCase,
                                   IPv6HTTPDummyServerTestCase)
 from urllib3.poolmanager import PoolManager
 from urllib3.connectionpool import port_by_scheme
 from urllib3.exceptions import MaxRetryError, SSLError
+from urllib3.util.retry import Retry
 
 
 class TestPoolManager(HTTPDummyServerTestCase):
@@ -78,6 +81,34 @@ class TestPoolManager(HTTPDummyServerTestCase):
 
         self.assertEqual(r._pool.host, self.host_alt)
 
+    def test_too_many_redirects(self):
+        http = PoolManager()
+
+        try:
+            r = http.request('GET', '%s/redirect' % self.base_url,
+                             fields={'target': '%s/redirect?target=%s/' % (self.base_url, self.base_url)},
+                             retries=1)
+            self.fail("Failed to raise MaxRetryError exception, returned %r" % r.status)
+        except MaxRetryError:
+            pass
+
+        try:
+            r = http.request('GET', '%s/redirect' % self.base_url,
+                             fields={'target': '%s/redirect?target=%s/' % (self.base_url, self.base_url)},
+                             retries=Retry(total=None, redirect=1))
+            self.fail("Failed to raise MaxRetryError exception, returned %r" % r.status)
+        except MaxRetryError:
+            pass
+
+    def test_raise_on_redirect(self):
+        http = PoolManager()
+
+        r = http.request('GET', '%s/redirect' % self.base_url,
+                         fields={'target': '%s/redirect?target=%s/' % (self.base_url, self.base_url)},
+                         retries=Retry(total=None, redirect=1, raise_on_redirect=False))
+
+        self.assertEqual(r.status, 303)
+
     def test_missing_port(self):
         # Can a URL that lacks an explicit port like ':80' succeed, or
         # will all such URLs fail with an error?
@@ -125,6 +156,9 @@ class TestPoolManager(HTTPDummyServerTestCase):
 
 
 class TestIPv6PoolManager(IPv6HTTPDummyServerTestCase):
+    if not HAS_IPV6:
+        raise SkipTest("IPv6 is not supported on this system.")
+
     def setUp(self):
         self.base_url = 'http://[%s]:%d' % (self.host, self.port)
 

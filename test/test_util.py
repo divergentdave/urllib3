@@ -15,7 +15,10 @@ from urllib3.util.url import (
     split_first,
     Url,
 )
-from urllib3.util.ssl_ import resolve_cert_reqs, ssl_wrap_socket
+from urllib3.util.ssl_ import (
+    resolve_cert_reqs,
+    ssl_wrap_socket,
+)
 from urllib3.exceptions import (
     LocationParseError,
     TimeoutStateError,
@@ -94,6 +97,7 @@ class TestUtil(unittest.TestCase):
     parse_url_host_map = {
         'http://google.com/mail': Url('http', host='google.com', path='/mail'),
         'http://google.com/mail/': Url('http', host='google.com', path='/mail/'),
+        'http://google.com/mail': Url('http', host='google.com', path='mail'),
         'google.com/mail': Url(host='google.com', path='/mail'),
         'http://google.com/': Url('http', host='google.com', path='/'),
         'http://google.com': Url('http', host='google.com'),

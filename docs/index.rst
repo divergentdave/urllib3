@@ -11,6 +11,7 @@ urllib3 Documentation
    helpers
    collections
    contrib
+   security
 
 
 Highlights
@@ -256,6 +257,35 @@ disabled individually.
 
 See the :class:`~urllib3.util.retry.Retry` definition for more details.
 
+
+Stream
+------
+
+You may also stream your response and get data as they come (e.g. when using
+``transfer-encoding: chunked``). In this case, method
+:func:`~urllib3.response.HTTPResponse.stream` will return generator.
+
+::
+
+    >>> from urllib3 import PoolManager
+    >>> http = urllib3.PoolManager()
+
+    >>> r = http.request("GET", "http://httpbin.org/stream/3")
+    >>> r.getheader("transfer-encoding")
+    'chunked'
+
+    >>> for chunk in r.stream():
+    ... print chunk
+    {"url": "http://httpbin.org/stream/3", ..., "id": 0, ...}
+    {"url": "http://httpbin.org/stream/3", ..., "id": 1, ...}
+    {"url": "http://httpbin.org/stream/3", ..., "id": 2, ...}
+    >>> r.closed
+    True
+
+Completely consuming the stream will auto-close the response and release
+the connection back to the pool. If you're only partially consuming the
+consuming a stream, make sure to manually call ``r.close()`` on the
+response.
 
 Foundation
 ----------

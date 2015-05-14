@@ -4,6 +4,75 @@ Changes
 dev (master)
 ++++++++++++
 
+* ... [Short description of non-trivial change.] (Issue #)
+
+
+1.10.4 (2015-05-03)
++++++++++++++++++++
+
+* Migrate tests to Tornado 4. (Issue #594)
+
+* Append default warning configuration rather than overwrite.
+  (Issue #603)
+
+* Fix streaming decoding regression. (Issue #595)
+
+* Fix chunked requests losing state across keep-alive connections.
+  (Issue #599)
+
+* Fix hanging when chunked HEAD response has no body. (Issue #605)
+
+
+1.10.3 (2015-04-21)
++++++++++++++++++++
+
+* Emit ``InsecurePlatformWarning`` when SSLContext object is missing.
+  (Issue #558)
+
+* Fix regression of duplicate header keys being discarded.
+  (Issue #563)
+
+* ``Response.stream()`` returns a generator for chunked responses.
+  (Issue #560)
+
+* Set upper-bound timeout when waiting for a socket in PyOpenSSL.
+  (Issue #585)
+
+* Work on platforms without `ssl` module for plain HTTP requests.
+  (Issue #587)
+
+* Stop relying on the stdlib's default cipher list. (Issue #588)
+
+
+1.10.2 (2015-02-25)
++++++++++++++++++++
+
+* Fix file descriptor leakage on retries. (Issue #548)
+
+* Removed RC4 from default cipher list. (Issue #551)
+
+* Header performance improvements. (Issue #544)
+
+* Fix PoolManager not obeying redirect retry settings. (Issue #553)
+
+
+1.10.1 (2015-02-10)
++++++++++++++++++++
+
+* Pools can be used as context managers. (Issue #545)
+
+* Don't re-use connections which experienced an SSLError. (Issue #529)
+
+* Don't fail when gzip decoding an empty stream. (Issue #535)
+
+* Add sha256 support for fingerprint verification. (Issue #540)
+
+* Fixed handling of header values containing commas. (Issue #533)
+
+
+1.10 (2014-12-14)
++++++++++++++++++
+
 * Disabled SSLv3. (Issue #473)
 
 * Add ``Url.url`` property to return the composed url string. (Issue #394)
@@ -12,21 +81,25 @@ dev (master)
 
 * ``MaxRetryError.reason`` will always be an exception, not string.
   (Issue #481)
-  
+
 * Fixed SSL-related timeouts not being detected as timeouts. (Issue #492)
 
 * Py3: Use ``ssl.create_default_context()`` when available. (Issue #473)
 
 * Emit ``InsecureRequestWarning`` for *every* insecure HTTPS request.
   (Issue #496)
-  
+
 * Emit ``SecurityWarning`` when certificate has no ``subjectAltName``.
   (Issue #499)
-  
+
 * Close and discard sockets which experienced SSL-related errors.
   (Issue #501)
 
-* ... [Short description of non-trivial change.] (Issue #)
+* Handle ``body`` param in ``.request(...)``. (Issue #513)
+
+* Respect timeout with HTTPS proxy. (Issue #505)
+
+* PyOpenSSL: Handle ZeroReturnError exception. (Issue #520)
 
 
 1.9.1 (2014-09-13)
@@ -38,7 +111,7 @@ dev (master)
 
 * Fixed packaging issues of some development-related files not
   getting included. (Issue #440)
-  
+
 * Allow performing *only* fingerprint verification. (Issue #444)
 
 * Emit ``SecurityWarning`` if system clock is waaay off. (Issue #445)

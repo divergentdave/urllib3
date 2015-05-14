@@ -4,6 +4,7 @@ import socket
 import sys
 import unittest
 import time
+import warnings
 
 import mock
 
@@ -35,6 +36,7 @@ from urllib3.util.timeout import Timeout
 
 import tornado
 from dummyserver.testcase import HTTPDummyServerTestCase
+from dummyserver.server import NoIPv6Warning, HAS_IPV6_AND_DNS
 
 from nose.tools import timed
 
@@ -98,6 +100,13 @@ class TestConnectionPool(HTTPDummyServerTestCase):
         r = self.pool.request('POST', '/echo', fields=fields)
         self.assertEqual(r.data.count(b'name="foo"'), 2)
 
+    def test_request_method_body(self):
+        body = b'hi'
+        r = self.pool.request('POST', '/echo', body=body)
+        self.assertEqual(r.data, body)
+
+        fields = [('hi', 'hello')]
+        self.assertRaises(TypeError, self.pool.request, 'POST', '/echo', body=body, fields=fields)
 
     def test_unicode_upload(self):
         fieldname = u('myfile')
@@ -188,7 +197,7 @@ class TestConnectionPool(HTTPDummyServerTestCase):
     @timed(0.5)
     def test_timeout(self):
         """ Requests should time out when expected """
-        url = '/sleep?seconds=0.002'
+        url = '/sleep?seconds=0.003'
         timeout = Timeout(read=0.001)
 
         # Pool-global timeout
@@ -590,7 +599,11 @@ class TestConnectionPool(HTTPDummyServerTestCase):
         self.assertRaises(MaxRetryError, pool.request, 'GET', '/test', retries=2)
 
     def test_source_address(self):
-        for addr in VALID_SOURCE_ADDRESSES:
+        for addr, is_ipv6 in VALID_SOURCE_ADDRESSES:
+            if is_ipv6 and not HAS_IPV6_AND_DNS:
+                warnings.warn("No IPv6 support: skipping.",
+                              NoIPv6Warning)
+                continue
             pool = HTTPConnectionPool(self.host, self.port,
                     source_address=addr, retries=False)
             r = pool.request('GET', '/source_address')
@@ -605,13 +618,34 @@ class TestConnectionPool(HTTPDummyServerTestCase):
             self.assertRaises(ProtocolError,
                     pool.request, 'GET', '/source_address')
 
-    @onlyPy3
-    def test_httplib_headers_case_insensitive(self):
-        HEADERS = {'Content-Length': '0', 'Content-type': 'text/plain',
-                    'Server': 'TornadoServer/%s' % tornado.version}
-        r = self.pool.request('GET', '/specific_method',
-                               fields={'method': 'GET'})
-        self.assertEqual(HEADERS, dict(r.headers.items())) # to preserve case sensitivity
+    def test_stream_keepalive(self):
+        x = 2
+
+        for _ in range(x):
+            response = self.pool.request(
+                    'GET',
+                    '/chunked',
+                    headers={
+                        'Connection': 'keep-alive',
+                        },
+                    preload_content=False,
+                    retries=False,
+                    )
+            for chunk in response.stream():
+                self.assertEqual(chunk, b'123')
+
+        self.assertEqual(self.pool.num_connections, 1)
+        self.assertEqual(self.pool.num_requests, x)
+
+    def test_chunked_gzip(self):
+        response = self.pool.request(
+                'GET',
+                '/chunked_gzip',
+                preload_content=False,
+                decode_content=True,
+                )
+
+        self.assertEqual(b'123' * 4, response.read())
 
 
 class TestRetry(HTTPDummyServerTestCase):

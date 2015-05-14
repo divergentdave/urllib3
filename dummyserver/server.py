@@ -13,9 +13,11 @@ import string
 import sys
 import threading
 import socket
+import warnings
+
+from urllib3.exceptions import HTTPWarning
 
 from tornado.platform.auto import set_close_exec
-import tornado.wsgi
 import tornado.httpserver
 import tornado.ioloop
 import tornado.web
@@ -36,8 +38,42 @@ DEFAULT_CA = os.path.join(CERTS_PATH, 'cacert.pem')
 DEFAULT_CA_BAD = os.path.join(CERTS_PATH, 'client_bad.pem')
 NO_SAN_CA = os.path.join(CERTS_PATH, 'cacert.no_san.pem')
 
+def _has_ipv6(host):
+    """ Returns True if the system can bind an IPv6 address. """
+    sock = None
+    has_ipv6 = False
+
+    if socket.has_ipv6:
+        # has_ipv6 returns true if cPython was compiled with IPv6 support.
+        # It does not tell us if the system has IPv6 support enabled. To
+        # determine that we must bind to an IPv6 address.
+        # https://github.com/shazow/urllib3/pull/611
+        # https://bugs.python.org/issue658327
+        try:
+            sock = socket.socket(socket.AF_INET6)
+            sock.bind((host, 0))
+            has_ipv6 = True
+        except:
+            pass
+
+    if sock:
+        sock.close()
+    return has_ipv6
+
+# Some systems may have IPv6 support but DNS may not be configured
+# properly. We can not count that localhost will resolve to ::1 on all
+# systems. See https://github.com/shazow/urllib3/pull/611 and
+# https://bugs.python.org/issue18792
+HAS_IPV6_AND_DNS = _has_ipv6('localhost')
+HAS_IPV6 = _has_ipv6('::1')
+
 
 # Different types of servers we have:
+
+
+class NoIPv6Warning(HTTPWarning):
+    "IPv6 is not available"
+    pass
 
 
 class SocketServerThread(threading.Thread):
@@ -50,13 +86,19 @@ class SocketServerThread(threading.Thread):
     def __init__(self, socket_handler, host='localhost', port=8081,
                  ready_event=None):
         threading.Thread.__init__(self)
+        self.daemon = True
 
         self.socket_handler = socket_handler
         self.host = host
         self.ready_event = ready_event
 
     def _start_server(self):
-        sock = socket.socket(socket.AF_INET6)
+        if HAS_IPV6_AND_DNS:
+            sock = socket.socket(socket.AF_INET6)
+        else:
+            warnings.warn("No IPv6 support. Falling back to IPv4.",
+                          NoIPv6Warning)
+            sock = socket.socket(socket.AF_INET)
         if sys.platform != 'win32':
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((self.host, 0))
@@ -104,7 +146,7 @@ def bind_sockets(port, address=None, family=socket.AF_UNSPEC, backlog=128,
     sockets = []
     if address == "":
         address = None
-    if not socket.has_ipv6 and family == socket.AF_UNSPEC:
+    if not HAS_IPV6 and family == socket.AF_UNSPEC:
         # Python can be compiled with --disable-ipv6, which causes
         # operations on AF_INET6 sockets to fail, but does not
         # automatically exclude those results from getaddrinfo
@@ -192,7 +234,7 @@ if __name__ == '__main__':
     host = '127.0.0.1'
 
     io_loop = tornado.ioloop.IOLoop()
-    app = tornado.wsgi.WSGIContainer(TestingApp())
+    app = tornado.web.Application([(r".*", TestingApp)])
     server, port = run_tornado_app(app, io_loop, None,
                                    'http', host)
     server_thread = run_loop_in_thread(io_loop)

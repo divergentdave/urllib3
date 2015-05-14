@@ -18,6 +18,8 @@ from dummyserver.testcase import SocketDummyServerTestCase
 from dummyserver.server import (
     DEFAULT_CERTS, DEFAULT_CA, get_unreachable_address)
 
+from .. import onlyPy3
+
 from nose.plugins.skip import SkipTest
 from threading import Event
 import socket
@@ -44,6 +46,7 @@ class TestCookies(SocketDummyServerTestCase):
         pool = HTTPConnectionPool(self.host, self.port)
         r = pool.request('GET', '/', retries=0)
         self.assertEqual(r.headers, {'set-cookie': 'foo=1, bar=1'})
+        self.assertEqual(r.headers.getlist('set-cookie'), ['foo=1', 'bar=1'])
 
 
 class TestSNI(SocketDummyServerTestCase):
@@ -521,6 +524,43 @@ class TestSSL(SocketDummyServerTestCase):
         finally:
             timed_out.set()
 
+    def test_ssl_failed_fingerprint_verification(self):
+        def socket_handler(listener):
+            for i in range(2):
+                sock = listener.accept()[0]
+                ssl_sock = ssl.wrap_socket(sock,
+                                           server_side=True,
+                                           keyfile=DEFAULT_CERTS['keyfile'],
+                                           certfile=DEFAULT_CERTS['certfile'],
+                                           ca_certs=DEFAULT_CA)
+
+                ssl_sock.send(b'HTTP/1.1 200 OK\r\n'
+                              b'Content-Type: text/plain\r\n'
+                              b'Content-Length: 5\r\n\r\n'
+                              b'Hello')
+
+                ssl_sock.close()
+                sock.close()
+
+        self._start_server(socket_handler)
+        # GitHub's fingerprint. Valid, but not matching.
+        fingerprint = ('A0:C4:A7:46:00:ED:A7:2D:C0:BE:CB'
+                       ':9A:8C:B6:07:CA:58:EE:74:5E')
+
+        def request():
+            try:
+                pool = HTTPSConnectionPool(self.host, self.port,
+                                           assert_fingerprint=fingerprint)
+                response = pool.urlopen('GET', '/', preload_content=False,
+                                        timeout=Timeout(connect=1, read=0.001))
+                response.read()
+            finally:
+                pool.close()
+
+        self.assertRaises(SSLError, request)
+        # Should not hang, see https://github.com/shazow/urllib3/issues/529
+        self.assertRaises(SSLError, request)
+
 
 def consume_socket(sock, chunks=65536):
     while not sock.recv(chunks).endswith(b'\r\n\r\n'):
@@ -560,3 +600,49 @@ class TestErrorWrapping(SocketDummyServerTestCase):
         self._start_server(handler)
         pool = HTTPConnectionPool(self.host, self.port, retries=False)
         self.assertRaises(ProtocolError, pool.request, 'GET', '/')
+
+class TestHeaders(SocketDummyServerTestCase):
+
+    @onlyPy3
+    def test_httplib_headers_case_insensitive(self):
+        handler = create_response_handler(
+           b'HTTP/1.1 200 OK\r\n'
+           b'Content-Length: 0\r\n'
+           b'Content-type: text/plain\r\n'
+           b'\r\n'
+        )
+        self._start_server(handler)
+        pool = HTTPConnectionPool(self.host, self.port, retries=False)
+        HEADERS = {'Content-Length': '0', 'Content-type': 'text/plain'}
+        r = pool.request('GET', '/')
+        self.assertEqual(HEADERS, dict(r.headers.items())) # to preserve case sensitivity
+
+
+class TestHEAD(SocketDummyServerTestCase):
+    def test_chunked_head_response_does_not_hang(self):
+        handler = create_response_handler(
+           b'HTTP/1.1 200 OK\r\n'
+           b'Transfer-Encoding: chunked\r\n'
+           b'Content-type: text/plain\r\n'
+           b'\r\n'
+        )
+        self._start_server(handler)
+        pool = HTTPConnectionPool(self.host, self.port, retries=False)
+        r = pool.request('HEAD', '/', timeout=1, preload_content=False)
+
+        # stream will use the read_chunked method here.
+        self.assertEqual([], list(r.stream()))
+
+    def test_empty_head_response_does_not_hang(self):
+        handler = create_response_handler(
+           b'HTTP/1.1 200 OK\r\n'
+           b'Content-Length: 256\r\n'
+           b'Content-type: text/plain\r\n'
+           b'\r\n'
+        )
+        self._start_server(handler)
+        pool = HTTPConnectionPool(self.host, self.port, retries=False)
+        r = pool.request('HEAD', '/', timeout=1, preload_content=False)
+
+        # stream will use the read method here.
+        self.assertEqual([], list(r.stream()))

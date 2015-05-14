@@ -30,8 +30,15 @@ from urllib3.exceptions import (
     ConnectTimeoutError,
     InsecureRequestWarning,
     SystemTimeWarning,
+    InsecurePlatformWarning,
 )
+from urllib3.packages import six
 from urllib3.util.timeout import Timeout
+
+
+ResourceWarning = getattr(
+        six.moves.builtins,
+        'ResourceWarning', type('ResourceWarning', (), {}))
 
 
 log = logging.getLogger('urllib3.connectionpool')
@@ -64,7 +71,14 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         with mock.patch('warnings.warn') as warn:
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)
-            self.assertFalse(warn.called, warn.call_args_list)
+
+            if sys.version_info >= (2, 7, 9):
+                self.assertFalse(warn.called, warn.call_args_list)
+            else:
+                self.assertTrue(warn.called)
+                call, = warn.call_args_list
+                error = call[0][1]
+                self.assertEqual(error, InsecurePlatformWarning)
 
     def test_invalid_common_name(self):
         https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
@@ -137,8 +151,11 @@ class TestHTTPS(HTTPSDummyServerTestCase):
             self.assertEqual(r.status, 200)
             self.assertTrue(warn.called)
 
-            call, = warn.call_args_list
-            category = call[0][1]
+            calls = warn.call_args_list
+            if sys.version_info >= (2, 7, 9):
+                category = calls[0][0][1]
+            else:
+                category = calls[1][0][1]
             self.assertEqual(category, InsecureRequestWarning)
 
     @requires_network
@@ -202,6 +219,16 @@ class TestHTTPS(HTTPSDummyServerTestCase):
                                         '7A:F2:8A:D7:1E:07:33:67:DE'
         https_pool.request('GET', '/')
 
+    def test_assert_fingerprint_sha256(self):
+        https_pool = HTTPSConnectionPool('localhost', self.port,
+                                         cert_reqs='CERT_REQUIRED',
+                                         ca_certs=DEFAULT_CA)
+
+        https_pool.assert_fingerprint = ('9A:29:9D:4F:47:85:1C:51:23:F5:9A:A3:'
+                                         '0F:5A:EF:96:F9:2E:3C:22:2E:FC:E8:BC:'
+                                         '0E:73:90:37:ED:3B:AA:AB')
+        https_pool.request('GET', '/')
+
     def test_assert_invalid_fingerprint(self):
         https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
                                          cert_reqs='CERT_REQUIRED',
@@ -235,6 +262,15 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
                                          cert_reqs='CERT_NONE',
                                          ca_certs=DEFAULT_CA_BAD)
+
+        https_pool.assert_fingerprint = 'CC:45:6A:90:82:F7FF:C0:8218:8e:' \
+                                        '7A:F2:8A:D7:1E:07:33:67:DE'
+        https_pool.request('GET', '/')
+
+    def test_good_fingerprint_and_hostname_mismatch(self):
+        https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
+                                         cert_reqs='CERT_REQUIRED',
+                                         ca_certs=DEFAULT_CA)
 
         https_pool.assert_fingerprint = 'CC:45:6A:90:82:F7FF:C0:8218:8e:' \
                                         '7A:F2:8A:D7:1E:07:33:67:DE'
@@ -332,10 +368,8 @@ class TestHTTPS(HTTPSDummyServerTestCase):
     def test_ssl_correct_system_time(self):
         self._pool.cert_reqs = 'CERT_REQUIRED'
         self._pool.ca_certs = DEFAULT_CA
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter('always')
-            self._pool.request('GET', '/')
 
+        w = self._request_without_resource_warnings('GET', '/')
         self.assertEqual([], w)
 
     def test_ssl_wrong_system_time(self):
@@ -344,15 +378,20 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         with mock.patch('urllib3.connection.datetime') as mock_date:
             mock_date.date.today.return_value = datetime.date(1970, 1, 1)
 
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter('always')
-                self._pool.request('GET', '/')
+            w = self._request_without_resource_warnings('GET', '/')
 
             self.assertEqual(len(w), 1)
             warning = w[0]
 
             self.assertEqual(SystemTimeWarning, warning.category)
             self.assertTrue(str(RECENT_DATE) in warning.message.args[0])
+
+    def _request_without_resource_warnings(self, method, url):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self._pool.request(method, url)
+
+        return [x for x in w if not isinstance(x.message, ResourceWarning)]
 
 
 class TestHTTPS_TLSv1(HTTPSDummyServerTestCase):

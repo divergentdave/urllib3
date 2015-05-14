@@ -38,8 +38,6 @@ Module Variables
 ----------------
 
 :var DEFAULT_SSL_CIPHER_LIST: The list of supported SSL/TLS cipher suites.
-    Default: ``ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:
-    ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+3DES:!aNULL:!MD5:!DSS``
 
 .. _sni: https://en.wikipedia.org/wiki/Server_Name_Indication
 .. _crime attack: https://en.wikipedia.org/wiki/CRIME_(security_exploit)
@@ -70,9 +68,14 @@ HAS_SNI = SUBJ_ALT_NAME_SUPPORT
 # Map from urllib3 to PyOpenSSL compatible parameter-values.
 _openssl_versions = {
     ssl.PROTOCOL_SSLv23: OpenSSL.SSL.SSLv23_METHOD,
-    ssl.PROTOCOL_SSLv3: OpenSSL.SSL.SSLv3_METHOD,
     ssl.PROTOCOL_TLSv1: OpenSSL.SSL.TLSv1_METHOD,
 }
+
+try:
+    _openssl_versions.update({ssl.PROTOCOL_SSLv3: OpenSSL.SSL.SSLv3_METHOD})
+except AttributeError:
+    pass
+
 _openssl_verify = {
     ssl.CERT_NONE: OpenSSL.SSL.VERIFY_NONE,
     ssl.CERT_OPTIONAL: OpenSSL.SSL.VERIFY_PEER,
@@ -80,22 +83,7 @@ _openssl_verify = {
                        + OpenSSL.SSL.VERIFY_FAIL_IF_NO_PEER_CERT,
 }
 
-# A secure default.
-# Sources for more information on TLS ciphers:
-#
-# - https://wiki.mozilla.org/Security/Server_Side_TLS
-# - https://www.ssllabs.com/projects/best-practices/index.html
-# - https://hynek.me/articles/hardening-your-web-servers-ssl-ciphers/
-#
-# The general intent is:
-# - Prefer cipher suites that offer perfect forward secrecy (DHE/ECDHE),
-# - prefer ECDHE over DHE for better performance,
-# - prefer any AES-GCM over any AES-CBC for better performance and security,
-# - use 3DES as fallback which is secure but slow,
-# - disable NULL authentication, MD5 MACs and DSS for security reasons.
-DEFAULT_SSL_CIPHER_LIST = "ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:" + \
-    "ECDH+AES128:DH+AES:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+3DES:" + \
-    "!aNULL:!MD5:!DSS"
+DEFAULT_SSL_CIPHER_LIST = util.ssl_.DEFAULT_CIPHERS
 
 
 orig_util_HAS_SNI = util.HAS_SNI
@@ -186,6 +174,11 @@ class WrappedSocket(object):
                 return b''
             else:
                 raise
+        except OpenSSL.SSL.ZeroReturnError as e:
+            if self.connection.get_shutdown() == OpenSSL.SSL.RECEIVED_SHUTDOWN:
+                return b''
+            else:
+                raise
         except OpenSSL.SSL.WantReadError:
             rd, wd, ed = select.select(
                 [self.socket], [], [], self.socket.gettimeout())
@@ -215,9 +208,13 @@ class WrappedSocket(object):
             sent = self._send_until_done(data)
             data = data[sent:]
 
+    def shutdown(self):
+        # FIXME rethrow compatible exceptions should we ever use this
+        self.connection.shutdown()
+
     def close(self):
         if self._makefile_refs < 1:
-            return self.connection.shutdown()
+            return self.connection.close()
         else:
             self._makefile_refs -= 1
 
@@ -289,7 +286,9 @@ def ssl_wrap_socket(sock, keyfile=None, certfile=None, cert_reqs=None,
         try:
             cnx.do_handshake()
         except OpenSSL.SSL.WantReadError:
-            select.select([sock], [], [])
+            rd, _, _ = select.select([sock], [], [], sock.gettimeout())
+            if not rd:
+                raise timeout('select timed out')
             continue
         except OpenSSL.SSL.Error as e:
             raise ssl.SSLError('bad handshake', e)

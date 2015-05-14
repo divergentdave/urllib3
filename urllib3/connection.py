@@ -282,3 +282,5 @@ if ssl:
     # Make a copy for testing.
     UnverifiedHTTPSConnection = HTTPSConnection
     HTTPSConnection = VerifiedHTTPSConnection
+else:
+    HTTPSConnection = DummyConnection
