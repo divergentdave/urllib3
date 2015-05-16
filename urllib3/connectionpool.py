@@ -671,7 +671,6 @@ class HTTPSConnectionPool(HTTPConnectionPool):
                           ca_certs=self.ca_certs,
                           assert_hostname=self.assert_hostname,
                           assert_fingerprint=self.assert_fingerprint)
-            conn.ssl_version = self.ssl_version
 
         if self.proxy is not None:
             # Python 2.7+
@@ -712,7 +711,9 @@ class HTTPSConnectionPool(HTTPConnectionPool):
 
         conn = self.ConnectionCls(host=actual_host, port=actual_port,
                                   timeout=self.timeout.connect_timeout,
-                                  strict=self.strict, **self.conn_kw)
+                                  strict=self.strict,
+                                  ssl_version=self.ssl_version,
+                                  **self.conn_kw)
 
         return self._prepare_conn(conn)
 
