@@ -10,7 +10,8 @@ from nose.plugins.skip import SkipTest
 
 from dummyserver.testcase import HTTPSDummyServerTestCase
 from dummyserver.server import (DEFAULT_CA, DEFAULT_CA_BAD, DEFAULT_CERTS,
-                                NO_SAN_CERTS, NO_SAN_CA)
+                                NO_SAN_CERTS, NO_SAN_CA,
+                                CLIENT_CA, CLIENT_CERT, CLIENT_KEY)
 
 from test import (
     onlyPy26OrOlder,
@@ -600,6 +601,26 @@ class TestHTTPS_NoSAN(HTTPSDummyServerTestCase):
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)
             self.assertTrue(warn.called)
+
+
+class TestHTTPS_ClientCertificate(HTTPSDummyServerTestCase):
+    certs = DEFAULT_CERTS.copy()
+    certs['cert_reqs'] = ssl.CERT_REQUIRED
+    certs['ca_certs'] = CLIENT_CA
+
+    def test_no_client_cert(self):
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   cert_reqs='CERT_REQUIRED',
+                                   ca_certs=DEFAULT_CA)
+        self.assertRaises(SSLError, pool.request, 'GET', '/')
+
+    def test_with_client_cert(self):
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   cert_reqs='CERT_REQUIRED',
+                                   ca_certs=DEFAULT_CA,
+                                   cert_file=CLIENT_CERT,
+                                   key_file=CLIENT_KEY)
+        pool.request('GET', '/')
 
 
 if __name__ == '__main__':
