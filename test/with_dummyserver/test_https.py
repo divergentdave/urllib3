@@ -31,6 +31,8 @@ from urllib3.exceptions import (
     InsecureRequestWarning,
     SystemTimeWarning,
 )
+from urllib3.packages import six
+from urllib3.util.ssl_ import create_urllib3_context
 from urllib3.util.timeout import Timeout
 
 
@@ -53,6 +55,14 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         r = self._pool.request('GET', '/')
         self.assertEqual(r.status, 200, r.data)
 
+    def test_set_ssl_version_to_tlsv1_context(self):
+        ctx = create_urllib3_context(ssl_version=ssl.PROTOCOL_TLSv1,
+                                     cert_reqs=ssl.CERT_NONE)
+        https_pool = HTTPSConnectionPool(self.host, self.port,
+                                         ssl_context=ctx)
+        r = https_pool.request('GET', '/')
+        self.assertEqual(r.status, 200, r.data)
+
     def test_verified(self):
         https_pool = HTTPSConnectionPool(self.host, self.port,
                                          cert_reqs='CERT_REQUIRED',
@@ -66,10 +76,42 @@ class TestHTTPS(HTTPSDummyServerTestCase):
             self.assertEqual(r.status, 200)
             self.assertFalse(warn.called, warn.call_args_list)
 
+    def test_verified_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool(self.host, self.port,
+                                         ssl_context=ctx)
+
+        conn = https_pool._new_conn()
+        self.assertEqual(conn.__class__, VerifiedHTTPSConnection)
+
+        with mock.patch('warnings.warn') as warn:
+            r = https_pool.request('GET', '/')
+            self.assertEqual(r.status, 200)
+
+            if sys.version_info >= (2, 7, 9):
+                self.assertFalse(warn.called, warn.call_args_list)
+            else:
+                self.assertTrue(warn.called)
+                call, = warn.call_args_list
+                error = call[0][1]
+                self.assertEqual(error, InsecurePlatformWarning)
+
     def test_invalid_common_name(self):
         https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
                                          cert_reqs='CERT_REQUIRED',
                                          ca_certs=DEFAULT_CA)
+        try:
+            https_pool.request('GET', '/')
+            self.fail("Didn't raise SSL invalid common name")
+        except SSLError as e:
+            self.assertTrue("doesn't match" in str(e))
+
+    def test_invalid_common_name_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
+                                         ssl_context=ctx)
         try:
             https_pool.request('GET', '/')
             self.fail("Didn't raise SSL invalid common name")
@@ -89,10 +131,42 @@ class TestHTTPS(HTTPSDummyServerTestCase):
                             "Expected 'certificate verify failed',"
                             "instead got: %r" % e)
 
+    def test_verified_with_bad_ca_certs_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA_BAD)
+        https_pool = HTTPSConnectionPool(self.host, self.port,
+                                         ssl_context=ctx)
+
+        try:
+            https_pool.request('GET', '/')
+            self.fail("Didn't raise SSL error with bad CA certs")
+        except SSLError as e:
+            self.assertTrue('certificate verify failed' in str(e),
+                            "Expected 'certificate verify failed',"
+                            "instead got: %r" % e)
+
     def test_verified_without_ca_certs(self):
         # default is cert_reqs=None which is ssl.CERT_NONE
         https_pool = HTTPSConnectionPool(self.host, self.port,
                                          cert_reqs='CERT_REQUIRED')
+
+        try:
+            https_pool.request('GET', '/')
+            self.fail("Didn't raise SSL error with no CA certs when"
+                      "CERT_REQUIRED is set")
+        except SSLError as e:
+            # there is a different error message depending on whether or
+            # not pyopenssl is injected
+            self.assertTrue('No root certificates specified' in str(e) or
+                            'certificate verify failed' in str(e),
+                            "Expected 'No root certificates specified' or "
+                            "'certificate verify failed', "
+                            "instead got: %r" % e)
+
+    def test_verified_without_ca_certs_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        https_pool = HTTPSConnectionPool(self.host, self.port,
+                                         ssl_context=ctx)
 
         try:
             https_pool.request('GET', '/')
@@ -141,6 +215,24 @@ class TestHTTPS(HTTPSDummyServerTestCase):
             category = call[0][1]
             self.assertEqual(category, InsecureRequestWarning)
 
+    def test_ssl_unverified_with_ca_certs_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_NONE)
+        ctx.load_verify_locations(DEFAULT_CA_BAD)
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   ssl_context=ctx)
+
+        with mock.patch('warnings.warn') as warn:
+            r = pool.request('GET', '/')
+            self.assertEqual(r.status, 200)
+            self.assertTrue(warn.called)
+
+            calls = warn.call_args_list
+            if sys.version_info >= (2, 7, 9):
+                category = calls[0][0][1]
+            else:
+                category = calls[1][0][1]
+            self.assertEqual(category, InsecureRequestWarning)
+
     @requires_network
     def test_ssl_verified_with_platform_ca_certs(self):
         """
@@ -176,6 +268,15 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         https_pool.assert_hostname = False
         https_pool.request('GET', '/')
 
+    def test_assert_hostname_false_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('localhost', self.port,
+                                         ssl_context=ctx)
+
+        https_pool.assert_hostname = False
+        https_pool.request('GET', '/')
+
     def test_assert_specific_hostname(self):
         https_pool = HTTPSConnectionPool('localhost', self.port,
                                          cert_reqs='CERT_REQUIRED',
@@ -184,10 +285,29 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         https_pool.assert_hostname = 'localhost'
         https_pool.request('GET', '/')
 
+    def test_assert_specific_hostname_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('localhost', self.port,
+                                         ssl_context=ctx)
+
+        https_pool.assert_hostname = 'localhost'
+        https_pool.request('GET', '/')
+
     def test_assert_fingerprint_md5(self):
         https_pool = HTTPSConnectionPool('localhost', self.port,
                                          cert_reqs='CERT_REQUIRED',
                                          ca_certs=DEFAULT_CA)
+
+        https_pool.assert_fingerprint = 'CA:84:E1:AD0E5a:ef:2f:C3:09' \
+                                        ':E7:30:F8:CD:C8:5B'
+        https_pool.request('GET', '/')
+
+    def test_assert_fingerprint_md5_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('localhost', self.port,
+                                         ssl_context=ctx)
 
         https_pool.assert_fingerprint = 'CA:84:E1:AD0E5a:ef:2f:C3:09' \
                                         ':E7:30:F8:CD:C8:5B'
@@ -202,10 +322,62 @@ class TestHTTPS(HTTPSDummyServerTestCase):
                                         '7A:F2:8A:D7:1E:07:33:67:DE'
         https_pool.request('GET', '/')
 
+    def test_assert_fingerprint_sha1_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('localhost', self.port,
+                                         ssl_context=ctx)
+
+        https_pool.assert_fingerprint = 'CC:45:6A:90:82:F7FF:C0:8218:8e:' \
+                                        '7A:F2:8A:D7:1E:07:33:67:DE'
+        https_pool.request('GET', '/')
+
+    def test_assert_fingerprint_sha256(self):
+        https_pool = HTTPSConnectionPool('localhost', self.port,
+                                         cert_reqs='CERT_REQUIRED',
+                                         ca_certs=DEFAULT_CA)
+
+        https_pool.assert_fingerprint = ('9A:29:9D:4F:47:85:1C:51:23:F5:9A:A3:'
+                                         '0F:5A:EF:96:F9:2E:3C:22:2E:FC:E8:BC:'
+                                         '0E:73:90:37:ED:3B:AA:AB')
+        https_pool.request('GET', '/')
+
+    def test_assert_fingerprint_sha256_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('localhost', self.port,
+                                         ssl_context=ctx)
+
+        https_pool.assert_fingerprint = ('9A:29:9D:4F:47:85:1C:51:23:F5:9A:A3:'
+                                         '0F:5A:EF:96:F9:2E:3C:22:2E:FC:E8:BC:'
+                                         '0E:73:90:37:ED:3B:AA:AB')
+        https_pool.request('GET', '/')
+
     def test_assert_invalid_fingerprint(self):
         https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
                                          cert_reqs='CERT_REQUIRED',
                                          ca_certs=DEFAULT_CA)
+
+        https_pool.assert_fingerprint = 'AA:AA:AA:AA:AA:AAAA:AA:AAAA:AA:' \
+                                        'AA:AA:AA:AA:AA:AA:AA:AA:AA'
+
+        self.assertRaises(SSLError, https_pool.request, 'GET', '/')
+        https_pool._get_conn()
+
+        # Uneven length
+        https_pool.assert_fingerprint = 'AA:A'
+        self.assertRaises(SSLError, https_pool.request, 'GET', '/')
+        https_pool._get_conn()
+
+        # Invalid length
+        https_pool.assert_fingerprint = 'AA'
+        self.assertRaises(SSLError, https_pool.request, 'GET', '/')
+
+    def test_assert_invalid_fingerprint_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
+                                         ssl_context=ctx)
 
         https_pool.assert_fingerprint = 'AA:AA:AA:AA:AA:AAAA:AA:AAAA:AA:' \
                                         'AA:AA:AA:AA:AA:AA:AA:AA:AA'
@@ -231,10 +403,49 @@ class TestHTTPS(HTTPSDummyServerTestCase):
                                         'AA:AA:AA:AA:AA:AA:AA:AA:AA'
         self.assertRaises(SSLError, https_pool.request, 'GET', '/')
 
+    def test_verify_none_and_bad_fingerprint_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_NONE)
+        ctx.load_verify_locations(DEFAULT_CA_BAD)
+        https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
+                                         ssl_context=ctx)
+
+        https_pool.assert_fingerprint = 'AA:AA:AA:AA:AA:AAAA:AA:AAAA:AA:' \
+                                        'AA:AA:AA:AA:AA:AA:AA:AA:AA'
+        self.assertRaises(SSLError, https_pool.request, 'GET', '/')
+
     def test_verify_none_and_good_fingerprint(self):
         https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
                                          cert_reqs='CERT_NONE',
                                          ca_certs=DEFAULT_CA_BAD)
+
+        https_pool.assert_fingerprint = 'CC:45:6A:90:82:F7FF:C0:8218:8e:' \
+                                        '7A:F2:8A:D7:1E:07:33:67:DE'
+        https_pool.request('GET', '/')
+
+    def test_verify_none_and_good_fingerprint_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_NONE)
+        ctx.load_verify_locations(DEFAULT_CA_BAD)
+        https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
+                                         ssl_context=ctx)
+
+        https_pool.assert_fingerprint = 'CC:45:6A:90:82:F7FF:C0:8218:8e:' \
+                                        '7A:F2:8A:D7:1E:07:33:67:DE'
+        https_pool.request('GET', '/')
+
+    def test_good_fingerprint_and_hostname_mismatch(self):
+        https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
+                                         cert_reqs='CERT_REQUIRED',
+                                         ca_certs=DEFAULT_CA)
+
+        https_pool.assert_fingerprint = 'CC:45:6A:90:82:F7FF:C0:8218:8e:' \
+                                        '7A:F2:8A:D7:1E:07:33:67:DE'
+        https_pool.request('GET', '/')
+
+    def test_good_fingerprint_and_hostname_mismatch_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        https_pool = HTTPSConnectionPool('127.0.0.1', self.port,
+                                         ssl_context=ctx)
 
         https_pool.assert_fingerprint = 'CC:45:6A:90:82:F7FF:C0:8218:8e:' \
                                         '7A:F2:8A:D7:1E:07:33:67:DE'
@@ -366,6 +577,12 @@ class TestHTTPS_TLSv1(HTTPSDummyServerTestCase):
         self._pool.ssl_version = ssl.PROTOCOL_SSLv3
         self.assertRaises(SSLError, self._pool.request, 'GET', '/')
 
+    def test_set_ssl_version_to_sslv3_context(self):
+        ctx = create_urllib3_context(ssl_version=ssl.PROTOCOL_SSLv3)
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   ssl_context=ctx)
+        self.assertRaises(SSLError, pool.request, 'GET', '/')
+
     def test_ssl_version_as_string(self):
         self._pool.ssl_version = 'PROTOCOL_SSLv3'
         self.assertRaises(SSLError, self._pool.request, 'GET', '/')
@@ -379,6 +596,15 @@ class TestHTTPS_TLSv1(HTTPSDummyServerTestCase):
         self.assertRaises(SSLError, self._pool.request, 'GET', '/')
         self._pool.ca_certs = DEFAULT_CA
         self._pool.request('GET', '/')
+
+    def test_discards_connection_on_sslerror_context(self):
+        ctx = create_urllib3_context()
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   ssl_context=ctx)
+        pool.cert_reqs = 'CERT_REQUIRED'
+        self.assertRaises(SSLError, pool.request, 'GET', '/')
+        pool.ca_certs = DEFAULT_CA
+        pool.request('GET', '/')
 
 
 class TestHTTPS_NoSAN(HTTPSDummyServerTestCase):
