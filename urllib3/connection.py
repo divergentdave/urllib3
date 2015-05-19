@@ -195,9 +195,16 @@ class VerifiedHTTPSConnection(HTTPSConnection):
     Based on httplib.HTTPSConnection but wraps the socket with
     SSL certification.
     """
-    cert_reqs = None
     ca_certs = None
     assert_fingerprint = None
+
+    @property
+    def cert_reqs(self):
+        return self.ssl_context.verify_mode
+
+    @cert_reqs.setter
+    def cert_reqs(self, value):
+        self.ssl_context.verify_mode = resolve_cert_reqs(value)
 
     def set_cert(self, key_file=None, cert_file=None,
                  cert_reqs=None, ca_certs=None,
@@ -222,13 +229,14 @@ class VerifiedHTTPSConnection(HTTPSConnection):
 
         self.key_file = key_file
         self.cert_file = cert_file
-        self.cert_reqs = cert_reqs
         self.ca_certs = ca_certs
         self.assert_hostname = assert_hostname
         self.assert_fingerprint = assert_fingerprint
 
+        if cert_reqs is not None:
+            self.cert_reqs = cert_reqs
+
         context = self.ssl_context
-        context.verify_mode = resolve_cert_reqs(cert_reqs)
 
         if cert_file is not None:
             context.load_cert_chain(cert_file, key_file)
