@@ -38,6 +38,11 @@ DEFAULT_CA = os.path.join(CERTS_PATH, 'cacert.pem')
 DEFAULT_CA_BAD = os.path.join(CERTS_PATH, 'client_bad.pem')
 NO_SAN_CA = os.path.join(CERTS_PATH, 'cacert.no_san.pem')
 
+CLIENT_CA = os.path.join(CERTS_PATH, 'client_auth_ca.pem')
+CLIENT_CERT = os.path.join(CERTS_PATH, 'client_auth_cert.pem')
+CLIENT_KEY = os.path.join(CERTS_PATH, 'client_auth_cert.key')
+
+
 def _has_ipv6(host):
     """ Returns True if the system can bind an IPv6 address. """
     sock = None
