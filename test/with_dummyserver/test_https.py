@@ -653,6 +653,13 @@ class TestHTTPS_ClientCertificate(HTTPSDummyServerTestCase):
                                    ca_certs=DEFAULT_CA)
         self.assertRaises(SSLError, pool.request, 'GET', '/')
 
+    def test_no_client_cert_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   ssl_context=ctx)
+        self.assertRaises(SSLError, pool.request, 'GET', '/')
+
     def test_with_client_cert(self):
         pool = HTTPSConnectionPool(self.host, self.port,
                                    cert_reqs='CERT_REQUIRED',
@@ -660,6 +667,29 @@ class TestHTTPS_ClientCertificate(HTTPSDummyServerTestCase):
                                    cert_file=CLIENT_CERT,
                                    key_file=CLIENT_KEY)
         pool.request('GET', '/')
+
+    def test_with_client_cert_context(self):
+        ctx = create_urllib3_context(cert_reqs=ssl.CERT_REQUIRED)
+        ctx.load_verify_locations(DEFAULT_CA)
+        ctx.load_cert_chain(CLIENT_CERT, CLIENT_KEY)
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   ssl_context=ctx)
+        pool.request('GET', '/')
+
+    def test_with_client_cert_unverified(self):
+        pool = HTTPSConnectionPool(self.host, self.port,
+                                   cert_file=CLIENT_CERT,
+                                   key_file=CLIENT_KEY)
+        pool.ConnectionCls = UnverifiedHTTPSConnection
+
+        with mock.patch('warnings.warn') as warn:
+            r = pool.request('GET', '/')
+            self.assertEqual(r.status, 200)
+            self.assertTrue(warn.called)
+
+            call, = warn.call_args_list
+            category = call[0][1]
+            self.assertEqual(category, InsecureRequestWarning)
 
 
 if __name__ == '__main__':
