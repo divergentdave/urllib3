@@ -664,8 +664,8 @@ class HTTPSConnectionPool(HTTPConnectionPool):
 
     The ``key_file``, ``cert_file``, ``cert_reqs``, ``ca_certs`` and
     ``ssl_version`` are only used if :mod:`ssl` is available and are fed into
-    :meth:`urllib3.util.ssl_wrap_socket` to upgrade the connection socket
-    into an SSL socket.
+    ``SSLContext.wrap_socket`` to upgrade the connection socket into an SSL
+    socket.
     """
 
     scheme = 'https'
@@ -693,8 +693,8 @@ class HTTPSConnectionPool(HTTPConnectionPool):
 
     def _prepare_conn(self, conn):
         """
-        Prepare the ``connection`` for :meth:`urllib3.util.ssl_wrap_socket`
-        and establish the tunnel if proxy is used.
+        Prepare the ``connection`` for ``SSLContext.wrap_socket`` and
+        establish the tunnel if proxy is used.
         """
 
         if isinstance(conn, VerifiedHTTPSConnection):
