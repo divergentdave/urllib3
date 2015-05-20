@@ -273,16 +273,16 @@ class VerifiedHTTPSConnection(HTTPSConnection):
 
         # Wrap socket using verification with the root certs in
         # trusted_root_certs
-        if HAS_SNI:
+        if HAS_SNI:  # Platform-specific: OpenSSL with SNI enabled
             self.sock = self.ssl_context.wrap_socket(conn,
                                                      server_hostname=hostname)
-        else:
+        else:  # Platform-specific: OpenSSL with SNI disabled
             self.sock = self.ssl_context.wrap_socket(conn)
 
         if self.assert_fingerprint:
             assert_fingerprint(self.sock.getpeercert(binary_form=True),
                                self.assert_fingerprint)
-        elif self.ssl_context.verify_mode != ssl.CERT_NONE \
+        elif self.cert_reqs != ssl.CERT_NONE \
                 and self.assert_hostname is not False:
             cert = self.sock.getpeercert()
             if not cert.get('subjectAltName', ()):
@@ -294,7 +294,7 @@ class VerifiedHTTPSConnection(HTTPSConnection):
                 )
             match_hostname(cert, self.assert_hostname or hostname)
 
-        self.is_verified = (self.ssl_context.verify_mode == ssl.CERT_REQUIRED
+        self.is_verified = (self.cert_reqs == ssl.CERT_REQUIRED
                             or self.assert_fingerprint is not None)
 
 

@@ -713,6 +713,8 @@ class HTTPSConnectionPool(HTTPConnectionPool):
                                   timeout=self.timeout.connect_timeout,
                                   strict=self.strict,
                                   ssl_version=self.ssl_version,
+                                  key_file=self.key_file,
+                                  cert_file=self.cert_file,
                                   **self.conn_kw)
 
         return self._prepare_conn(conn)
