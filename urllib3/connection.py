@@ -198,13 +198,17 @@ class VerifiedHTTPSConnection(HTTPSConnection):
     ca_certs = None
     assert_fingerprint = None
 
-    @property
-    def cert_reqs(self):
-        return self.ssl_context.verify_mode
+    def __init__(self, host, port=None, key_file=None, cert_file=None,
+                 strict=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
+                 ssl_context=None, ssl_version=None, cert_reqs=None, **kw):
+        UnverifiedHTTPSConnection.__init__(self, host, port, key_file,
+                                           cert_file, strict, timeout,
+                                           ssl_context, ssl_version, **kw)
 
-    @cert_reqs.setter
-    def cert_reqs(self, value):
-        self.ssl_context.verify_mode = resolve_cert_reqs(value)
+        if ssl_context is None:
+            self.cert_reqs = cert_reqs
+        else:
+            self.cert_reqs = ssl_context.verify_mode
 
     def set_cert(self, key_file=None, cert_file=None,
                  cert_reqs=None, ca_certs=None,
@@ -233,10 +237,11 @@ class VerifiedHTTPSConnection(HTTPSConnection):
         self.assert_hostname = assert_hostname
         self.assert_fingerprint = assert_fingerprint
 
+        context = self.ssl_context
+
         if cert_reqs is not None:
             self.cert_reqs = cert_reqs
-
-        context = self.ssl_context
+            context.verify_mode = resolve_cert_reqs(cert_reqs)
 
         if cert_file is not None:
             context.load_cert_chain(cert_file, key_file)
@@ -282,7 +287,7 @@ class VerifiedHTTPSConnection(HTTPSConnection):
         if self.assert_fingerprint:
             assert_fingerprint(self.sock.getpeercert(binary_form=True),
                                self.assert_fingerprint)
-        elif self.cert_reqs != ssl.CERT_NONE \
+        elif self.ssl_context.verify_mode != ssl.CERT_NONE \
                 and self.assert_hostname is not False:
             cert = self.sock.getpeercert()
             if not cert.get('subjectAltName', ()):
@@ -294,7 +299,7 @@ class VerifiedHTTPSConnection(HTTPSConnection):
                 )
             match_hostname(cert, self.assert_hostname or hostname)
 
-        self.is_verified = (self.cert_reqs == ssl.CERT_REQUIRED
+        self.is_verified = (self.ssl_context.verify_mode == ssl.CERT_REQUIRED
                             or self.assert_fingerprint is not None)
 
 

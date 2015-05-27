@@ -678,6 +678,7 @@ class HTTPSConnectionPool(HTTPConnectionPool):
                  key_file=None, cert_file=None, cert_reqs=None,
                  ca_certs=None, ssl_version=None,
                  assert_hostname=None, assert_fingerprint=None,
+                 ssl_context=None,
                  **conn_kw):
 
         HTTPConnectionPool.__init__(self, host, port, strict, timeout, maxsize,
@@ -685,11 +686,17 @@ class HTTPSConnectionPool(HTTPConnectionPool):
                                     **conn_kw)
         self.key_file = key_file
         self.cert_file = cert_file
-        self.cert_reqs = cert_reqs
         self.ca_certs = ca_certs
         self.ssl_version = ssl_version
         self.assert_hostname = assert_hostname
         self.assert_fingerprint = assert_fingerprint
+        self.ssl_context = ssl_context
+
+        self.cert_reqs = None
+        if ssl_context is not None:
+            self.cert_reqs = ssl_context.verify_mode
+        if cert_reqs is not None:
+            self.cert_reqs = cert_reqs
 
     def _prepare_conn(self, conn):
         """
@@ -749,6 +756,7 @@ class HTTPSConnectionPool(HTTPConnectionPool):
                                   ssl_version=self.ssl_version,
                                   key_file=self.key_file,
                                   cert_file=self.cert_file,
+                                  ssl_context=self.ssl_context,
                                   **self.conn_kw)
 
         return self._prepare_conn(conn)
