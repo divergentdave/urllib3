@@ -78,16 +78,17 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         conn = https_pool._new_conn()
         self.assertEqual(conn.__class__, VerifiedHTTPSConnection)
 
-        with mock.patch('warnings.warn') as warn:
+        with warnings.catch_warnings(record=True) as warn:
+            warnings.simplefilter("always")
+
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)
 
             if sys.version_info >= (2, 7, 9):
-                self.assertFalse(warn.called, warn.call_args_list)
+                self.assertEqual(warn, [])
             else:
-                self.assertTrue(warn.called)
-                call, = warn.call_args_list
-                error = call[0][1]
+                self.assertEqual(len(warn), 1, warn)
+                error = warn[0].category
                 self.assertEqual(error, InsecurePlatformWarning)
 
     def test_verified_context(self):
@@ -99,16 +100,17 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         conn = https_pool._new_conn()
         self.assertEqual(conn.__class__, VerifiedHTTPSConnection)
 
-        with mock.patch('warnings.warn') as warn:
+        with warnings.catch_warnings(record=True) as warn:
+            warnings.simplefilter("always")
+
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)
 
             if sys.version_info >= (2, 7, 9):
-                self.assertFalse(warn.called, warn.call_args_list)
+                self.assertEqual(warn, [])
             else:
-                self.assertTrue(warn.called)
-                call, = warn.call_args_list
-                error = call[0][1]
+                self.assertEqual(len(warn), 1, warn)
+                error = warn[0].category
                 self.assertEqual(error, InsecurePlatformWarning)
 
     def test_invalid_common_name(self):
