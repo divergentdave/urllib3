@@ -88,6 +88,7 @@ except ImportError:
             self.ciphers = cipher_suite
 
         def wrap_socket(self, socket, server_hostname=None):
+            print("Emitting " "InsecurePlatformWarning")
             warnings.warn(
                 'A true SSLContext object is not available. This prevents '
                 'urllib3 from configuring SSL appropriately and may cause '
