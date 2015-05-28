@@ -17,7 +17,7 @@ from test import (
     onlyPy26OrOlder,
     requires_network,
     TARPIT_HOST,
-    clear_warnings,
+    catch_all_warnings,
 )
 from urllib3 import HTTPSConnectionPool
 from urllib3.connection import (
@@ -78,12 +78,7 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         conn = https_pool._new_conn()
         self.assertEqual(conn.__class__, VerifiedHTTPSConnection)
 
-        with warnings.catch_warnings(record=True) as warn:
-            warnings.simplefilter("always")
-            import urllib3
-            if hasattr(urllib3.util.ssl_, '__warningregistry__'):
-                urllib3.util.ssl_.__warningregistry__.clear()
-
+        with catch_all_warnings() as warn:
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)
 
@@ -103,11 +98,7 @@ class TestHTTPS(HTTPSDummyServerTestCase):
         conn = https_pool._new_conn()
         self.assertEqual(conn.__class__, VerifiedHTTPSConnection)
 
-        with warnings.catch_warnings(record=True) as warn:
-            warnings.simplefilter("always")
-            import urllib3
-            if hasattr(urllib3.util.ssl_, '__warningregistry__'):
-                urllib3.util.ssl_.__warningregistry__.clear()
+        with catch_all_warnings() as warn:
 
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)

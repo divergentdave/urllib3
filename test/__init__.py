@@ -91,3 +91,33 @@ def requires_network(test):
                 raise SkipTest(msg)
             raise
     return wrapper
+
+
+# Based on http://stackoverflow.com/a/26347105/1405898
+class catch_all_warnings(warnings.catch_warnings):
+    """A context manager that builds on ``warnings.catch_warnings``, and
+       additionally resets filters and warning registries."""
+
+    def __init__(self):
+        import urllib3
+        self.modules = [urllib3.util.ssl_]
+        self._warnreg_copies = {}
+        super(catch_all_warnings, self).__init__(record=True)
+
+    def __enter__(self):
+        for mod in self.modules:
+            if hasattr(mod, '__warningregistry__'):
+                reg = mod.__warningregistry__
+                self._warnreg_copies[mod] = reg.copy()
+                reg.clear()
+        result = super(catch_all_warnings, self).__enter__()
+        warnings.simplefilter("always")
+        return result
+
+    def __exit__(self, *exc_info):
+        super(catch_all_warnings, self).__exit__(*exc_info)
+        for mod in self.modules:
+            if hasattr(mod, '__warningregistry__'):
+                mod.__warningregistry__.clear()
+            if mod in self._warnreg_copies:
+                mod.__warningregistry__.update(self._warnreg_copies[mod])
