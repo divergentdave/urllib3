@@ -80,6 +80,9 @@ class TestHTTPS(HTTPSDummyServerTestCase):
 
         with warnings.catch_warnings(record=True) as warn:
             warnings.simplefilter("always")
+            import urllib3
+            if hasattr(urllib3.util.ssl_, '__warningregistry__'):
+                urllib3.util.ssl_.__warningregistry__.clear()
 
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)
@@ -102,6 +105,9 @@ class TestHTTPS(HTTPSDummyServerTestCase):
 
         with warnings.catch_warnings(record=True) as warn:
             warnings.simplefilter("always")
+            import urllib3
+            if hasattr(urllib3.util.ssl_, '__warningregistry__'):
+                urllib3.util.ssl_.__warningregistry__.clear()
 
             r = https_pool.request('GET', '/')
             self.assertEqual(r.status, 200)
